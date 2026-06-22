@@ -1,0 +1,57 @@
+name: validate-skill
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install validator dependency
+        run: python -m pip install --upgrade pip pyyaml
+
+      - name: Validate skill structure
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+
+          root = Path('.')
+          skill = root / 'SKILL.md'
+          assert skill.exists(), 'SKILL.md missing'
+          content = skill.read_text()
+          assert content.startswith('---\n'), 'SKILL frontmatter must start at byte 0'
+          end = content.find('\n---\n', 4)
+          assert end != -1, 'Closing frontmatter delimiter missing'
+          fm = yaml.safe_load(content[4:end])
+          assert isinstance(fm, dict), 'Frontmatter must be a mapping'
+          assert fm.get('name') == 'tossinvest-openapi-integration', 'Unexpected skill name'
+          desc = fm.get('description', '')
+          assert desc and len(desc) <= 1024, 'Description missing or too long'
+          assert '## Overview' in content, 'Overview section missing'
+          assert '## When to use' in content, 'When to use section missing'
+          assert '## Common Pitfalls' in content, 'Common Pitfalls section missing'
+          assert '## Verification Checklist' in content, 'Verification Checklist missing'
+
+          refs = [
+              root / 'references' / 'local-cli-cookbook.md',
+              root / 'references' / 'tossinvest-openapi-summary.md',
+              root / 'README.md',
+              root / 'LICENSE',
+          ]
+          missing = [str(p) for p in refs if not p.exists()]
+          assert not missing, f'Missing files: {missing}'
+          print('skill-validation-ok')
+          PY
